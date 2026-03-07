@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cookie Consent Lie Detector</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo-row">
+        <span class="logo">🍪🔍</span>
+        <div>
+          <h1>Cookie Lie Detector</h1>
+          <p class="subtitle">Did they respect your "Reject All"?</p>
+        </div>
+      </div>
+    </header>
+
+    <!-- Lie Score Display -->
+    <section id="score-section" class="score-section hidden">
+      <p id="score-site" class="score-site"></p>
+      <div class="score-ring-container">
+        <svg class="score-ring" viewBox="0 0 120 120">
+          <circle class="score-ring-bg" cx="60" cy="60" r="52" />
+          <circle id="score-ring-fill" class="score-ring-fill" cx="60" cy="60" r="52" />
+        </svg>
+        <div class="score-value">
+          <span id="score-number">0</span>
+          <span class="score-label">LIE SCORE</span>
+        </div>
+      </div>
+      <p id="score-verdict" class="score-verdict"></p>
+    </section>
+
+    <!-- Fingerprinting Alert (separate from consent score) -->
+    <section id="fingerprint-alert" class="fingerprint-alert hidden">
+      <div class="fp-alert-header">
+        <span class="fp-alert-icon">👁</span>
+        <span class="fp-alert-title">Fingerprinting Detected</span>
+      </div>
+      <p id="fp-alert-methods" class="fp-alert-methods"></p>
+      <p class="fp-alert-note">These track you without cookies — rejecting consent doesn't stop them.</p>
+    </section>
+
+    <!-- Banner Detection -->
+    <section id="banner-section" class="info-card hidden">
+      <div class="card-header">
+        <span class="card-icon">🪧</span>
+        <span class="card-title">Cookie Banner</span>
+        <span id="banner-status" class="status-badge"></span>
+      </div>
+      <p id="banner-detail" class="card-detail"></p>
+    </section>
+
+    <!-- Audit Controls -->
+    <section id="audit-controls" class="audit-section">
+      <div id="step-1" class="step active">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <p class="step-title">Capture Baseline</p>
+          <p class="step-desc">Record current cookies & trackers before you interact with the consent banner</p>
+          <button id="btn-baseline" class="btn btn-primary">Start Audit</button>
+        </div>
+      </div>
+
+      <div id="step-2" class="step">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <p class="step-title">Reject Cookies</p>
+          <p class="step-desc">Click "Reject All" on the website's cookie banner, then come back here</p>
+          <button id="btn-capture" class="btn btn-primary" disabled>Capture After Rejection</button>
+        </div>
+      </div>
+
+      <div id="step-3" class="step">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <p class="step-title">See Results</p>
+          <p class="step-desc">Find out if the site respected your choice</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Violations -->
+    <section id="violations-section" class="hidden">
+      <h2 class="section-title">Violations Found</h2>
+      <div id="violations-list"></div>
+    </section>
+
+    <!-- Stats Grid -->
+    <section id="stats-section" class="hidden">
+      <h2 class="section-title">Detailed Breakdown</h2>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon">🍪</div>
+          <div class="stat-value" id="stat-cookies-before">-</div>
+          <div class="stat-label">Cookies Before <span class="tooltip-trigger" data-tooltip="Total cookies on this site before you interacted with the consent banner. This is the baseline.">?</span></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">🍪</div>
+          <div class="stat-value" id="stat-cookies-after">-</div>
+          <div class="stat-label">Cookies After <span class="tooltip-trigger" data-tooltip="Total cookies after you clicked Reject All. Ideally this should be equal or lower than before.">?</span></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">🔴</div>
+          <div class="stat-value" id="stat-tracking">-</div>
+          <div class="stat-label">Tracking Cookies <span class="tooltip-trigger" data-tooltip="Cookies used to identify and follow you across websites, like Google Analytics (_ga) or Facebook (_fbp). These should be gone after rejection.">?</span></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">📍</div>
+          <div class="stat-value" id="stat-pixels">-</div>
+          <div class="stat-label">Tracking Pixels <span class="tooltip-trigger" data-tooltip="Invisible 1x1 images loaded from tracker servers (Facebook, Google, etc.) AFTER you rejected cookies. Pre-existing pixels are excluded.">?</span></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">🆕</div>
+          <div class="stat-value" id="stat-new-tracking">-</div>
+          <div class="stat-label">New After Reject <span class="tooltip-trigger" data-tooltip="Non-consent cookies that appeared after you clicked Reject All. These weren't here before — the site set them despite your rejection.">?</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <div class="footer-buttons">
+        <button id="btn-details" class="btn btn-secondary hidden">View Details</button>
+        <button id="btn-reset" class="btn btn-secondary hidden">Reset Audit</button>
+      </div>
+      <p class="footer-text">Cookie Consent Lie Detector v1.0</p>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

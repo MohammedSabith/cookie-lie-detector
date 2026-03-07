@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cookie Lie Detector — Detailed Report</title>
+  <link rel="stylesheet" href="details.css" />
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Cookie Consent Lie Detector — Detailed Report</h1>
+      <p id="site-url" class="site-url"></p>
+      <p id="audit-time" class="audit-time"></p>
+    </header>
+
+    <!-- Score Summary -->
+    <section id="score-summary" class="card">
+      <h2>Lie Score: <span id="lie-score">—</span><span id="lie-max" class="muted"> / 100</span></h2>
+      <div id="score-breakdown" class="score-breakdown"></div>
+    </section>
+
+    <!-- Violations -->
+    <section id="violations-section" class="card">
+      <h2>Violations</h2>
+      <div id="violations-list"></div>
+      <p id="no-violations" class="muted hidden">No violations detected.</p>
+    </section>
+
+    <!-- Cookie Analysis -->
+    <section class="card">
+      <h2>Cookie Analysis</h2>
+      <div class="table-meta">
+        <span id="cookie-counts"></span>
+      </div>
+      <div id="cookie-list"></div>
+      <p id="no-cookies" class="muted hidden">No cookie data available.</p>
+    </section>
+
+    <!-- Baseline Cookies -->
+    <section class="card">
+      <h2>Baseline Cookies (before rejection)</h2>
+      <div class="table-wrap">
+        <table id="baseline-table">
+          <thead>
+            <tr>
+              <th>Cookie Name</th>
+              <th>Domain</th>
+              <th>Tracking?</th>
+              <th>HttpOnly</th>
+              <th>Secure</th>
+              <th>SameSite</th>
+            </tr>
+          </thead>
+          <tbody id="baseline-tbody"></tbody>
+        </table>
+      </div>
+      <p id="no-baseline" class="muted hidden">No baseline data available.</p>
+    </section>
+
+    <!-- Tracking Pixels -->
+    <section class="card">
+      <h2>Tracking Pixels</h2>
+      <div class="table-wrap">
+        <table id="pixel-table">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Tracker Domain</th>
+              <th>Categories</th>
+              <th>Source URL</th>
+              <th>Type</th>
+            </tr>
+          </thead>
+          <tbody id="pixel-tbody"></tbody>
+        </table>
+      </div>
+      <p id="no-pixels" class="muted hidden">No tracking pixels detected.</p>
+    </section>
+
+    <!-- Fingerprinting -->
+    <section class="card">
+      <h2>Fingerprinting Detection</h2>
+      <div id="fingerprint-details"></div>
+      <p id="no-fingerprinting" class="muted hidden">No fingerprinting detected.</p>
+    </section>
+
+    <!-- Banner Info -->
+    <section class="card">
+      <h2>Cookie Banner</h2>
+      <div id="banner-details"></div>
+    </section>
+
+    <!-- Raw State (collapsible) -->
+    <section class="card">
+      <h2>
+        <button id="raw-toggle" class="toggle-btn">Show Raw Data</button>
+      </h2>
+      <pre id="raw-state" class="raw-state hidden"></pre>
+    </section>
+  </div>
+
+  <script src="trackers.js"></script>
+  <script src="details.js"></script>
+</body>
+</html>

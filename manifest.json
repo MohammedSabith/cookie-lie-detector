@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "Cookie Consent Lie Detector",
+  "version": "1.0.0",
+  "description": "Exposes websites that ignore your cookie rejection. See who's lying about respecting your privacy.",
+  "permissions": [
+    "cookies",
+    "storage",
+    "activeTab",
+    "webNavigation"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["trackers.js", "content.js"],
+      "run_at": "document_start",
+      "world": "ISOLATED"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["fingerprint-detector.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
