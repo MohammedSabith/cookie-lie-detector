@@ -717,6 +717,18 @@
       });
     }
 
+    if (msg.type === "RESUME_AUDIT") {
+      // Background detected a same-domain page reload during an active audit
+      // (consent-triggered reload). Scan the new page for pixels and fingerprinting
+      // and return the data so background can finalize the audit.
+      detectTrackingPixels();
+      sendResponse({
+        ok: true,
+        trackingPixels: state.trackingPixels,
+        fingerprinting: { ...state.fingerprinting },
+      });
+    }
+
     if (msg.type === "RESET_AUDIT") {
       // Reset all state back to initial without reloading the page.
       // NOTE: fingerprinting is NOT reset — it's a page-level event that

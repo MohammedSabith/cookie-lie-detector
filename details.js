@@ -322,7 +322,7 @@ function renderReport(report) {
       div.className = "fp-method";
       div.innerHTML = `
         <span class="fp-name">${esc(method)}</span>
-        <span class="fp-count">${count} call(s)</span>
+        <span class="fp-count">${count} ${count === 1 ? "call" : "calls"}</span>
         <span class="fp-desc">${esc(FP_DESCRIPTIONS[method] || "")}</span>
       `;
       container.appendChild(div);
@@ -361,8 +361,8 @@ function countSignalPts(violations, type) {
   const v = violations.find((v) => v.type === type);
   if (!v) return 0;
   // Recalculate from count
-  const perItem = { tracking_cookies: 7, new_tracking_cookies: 10, unexpected_cookies: 5, fingerprinting: 7, tracking_pixels: 5 };
-  const max = { tracking_cookies: 35, new_tracking_cookies: 25, unexpected_cookies: 15, fingerprinting: 20, tracking_pixels: 20 };
+  const perItem = { tracking_cookies: 7, new_tracking_cookies: 10, unexpected_cookies: 5, tracking_pixels: 5 };
+  const max = { tracking_cookies: 35, new_tracking_cookies: 25, unexpected_cookies: 15, tracking_pixels: 20 };
   return Math.min(max[type] || 20, v.count * (perItem[type] || 5));
 }
 

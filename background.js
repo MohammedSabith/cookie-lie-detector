@@ -42,6 +42,7 @@ function getTabState(tabId) {
       fingerprintingInfo: null, // { detected, methods, count } — separate from consent score
       url: "",
       finalizing: false, // Guard against concurrent finalizeAudit calls
+      pendingReload: false, // Set when consent-triggered page reload detected
     };
   }
   return tabState[tabId];
@@ -52,11 +53,67 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   delete tabState[tabId];
 });
 
-// Reset on navigation
+// Reset on navigation — but preserve state on same-domain reload during active audit
 chrome.webNavigation.onBeforeNavigate.addListener((details) => {
-  if (details.frameId === 0) {
+  if (details.frameId !== 0) return;
+
+  const ts = tabState[details.tabId];
+  if (!ts) return;
+
+  // Check if this is a same-domain navigation during an active audit
+  let oldDomain = "";
+  let newDomain = "";
+  try { oldDomain = new URL(ts.url).hostname; } catch {}
+  try { newDomain = new URL(details.url).hostname; } catch {}
+
+  const auditActive = ts.consentAction === "rejected" || ts.phase === "auditing";
+  const sameDomain = oldDomain && newDomain &&
+    (oldDomain === newDomain || oldDomain.endsWith("." + newDomain) || newDomain.endsWith("." + oldDomain));
+
+  if (sameDomain && auditActive && ts.phase !== "done") {
+    // Consent-triggered reload — keep state, mark for resumption
+    // Cancel any pending resume timer from a previous reload (redirect chains)
+    if (ts._resumeTimer) {
+      clearTimeout(ts._resumeTimer);
+      ts._resumeTimer = null;
+    }
+    ts.pendingReload = true;
+  } else {
     delete tabState[details.tabId];
   }
+});
+
+// After a consent-triggered reload completes, resume the audit
+chrome.webNavigation.onCompleted.addListener((details) => {
+  if (details.frameId !== 0) return;
+
+  const ts = tabState[details.tabId];
+  if (!ts || !ts.pendingReload) return;
+
+  ts.pendingReload = false;
+
+  // Wait for the new page's content.js to be ready, then ask it to scan
+  // Store timer ID so it can be canceled if another reload happens
+  ts._resumeTimer = setTimeout(() => {
+    ts._resumeTimer = null;
+    chrome.tabs.sendMessage(
+      details.tabId,
+      { type: "RESUME_AUDIT" },
+      (response) => {
+        // Consume lastError to prevent console noise if content.js isn't ready
+        if (chrome.runtime.lastError) {
+          // Content script not ready — proceed with existing data
+        }
+        // If content.js responded with data, merge it
+        if (response && response.ok) {
+          ts.after.trackingPixels = response.trackingPixels || ts.after.trackingPixels;
+          ts.after.fingerprinting = response.fingerprinting || ts.after.fingerprinting;
+        }
+        // Finalize regardless — chrome cookies are the priority
+        finalizeAudit(details.tabId);
+      }
+    );
+  }, 2000); // 2s for page to settle and content.js to be ready
 });
 
 // =========================================================
@@ -600,7 +657,6 @@ function buildReport(tabId) {
       trackingCookies: cr ? cr.tracking : afterCookies.filter((c) => c.isTracking).length,
       newTrackingCookies: cr ? cr.newNonConsent : (ts.after.newTrackingCookies || []).length,
       persistedTracking: cr ? cr.persistedTracking : 0,
-      fingerprinting: ts.after.fingerprinting || content.fingerprinting || {},
       trackingPixels: cr ? cr.newPixels : (ts.after.trackingPixels || []).length,
       timestamp: ts.after.timestamp,
     },
