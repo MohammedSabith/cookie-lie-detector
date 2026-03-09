@@ -2,12 +2,12 @@
 
 A Chrome extension that audits whether websites actually respect your "Reject All" cookie choice. It captures a baseline before you interact with the consent banner, monitors what happens after you click reject, and generates a Lie Score with detailed evidence.
 
-Research shows ~94% of websites have at least one cookie consent violation ([ETH Zurich, 2022](https://github.com/dibollinger/CookieBlock)). This tool makes those violations visible.
+Research by ETH Zurich found that the vast majority of websites using consent management platforms have at least one cookie consent violation ([CookieBlock, 2022](https://github.com/dibollinger/CookieBlock)). This tool makes those violations visible.
 
 ## How It Works
 
 1. **Visit any website** with a cookie consent banner
-2. The extension **auto-detects the banner** and captures a baseline snapshot of cookies, tracking pixels, and fingerprinting activity
+2. The extension **auto-detects the banner** and captures a baseline snapshot of cookies and tracking pixels
 3. **Click "Reject All"** on the site's cookie banner
 4. The extension detects your rejection (auto or manual), waits for the site to process it, then **audits what actually changed**
 5. A **Lie Score (0-100)** tells you how much the site violated your consent choice
@@ -51,7 +51,7 @@ Every classification includes transparent reasoning with point values, visible o
 ## Usage
 
 ### Automatic Mode
-Visit a website with a cookie banner. The extension auto-detects the banner, captures a baseline, and watches for your rejection click. After you click "Reject All," the score appears on the extension badge within ~10 seconds.
+Visit a website with a cookie banner. The extension auto-detects the banner, captures a baseline, and watches for your rejection click. After you click "Reject All," the extension audits at 2, 5, and 10 seconds and shows the final score on the badge.
 
 If the site reloads the page after rejection (common with OneTrust and other CMPs), the extension detects the same-domain reload, preserves the audit state, and resumes automatically on the new page.
 
@@ -78,10 +78,10 @@ The extension uses three detection layers:
 
 ### Rejection Detection
 
-Three strategies run simultaneously:
+Three strategies are used, with fallback priority:
 - **Button text matching** — Identifies reject buttons by text patterns (supports English, German, French, Spanish, Italian) and attaches click listeners
 - **Banner click delegation** — Listens for any click inside the banner and classifies the button text as reject/accept
-- **Banner disappearance** — Polls for the banner being removed or hidden. Checks the last button clicked inside the banner, then falls back to CMP APIs (TCF, OneTrust, Cookiebot) and consent cookies to determine the consent action
+- **Banner disappearance** — If the above don't fire, polls for the banner being removed or hidden. Checks the last button clicked inside the banner, then falls back to CMP APIs (TCF, OneTrust, Cookiebot) and consent cookies to determine the consent action
 
 ## Project Structure
 
@@ -121,7 +121,7 @@ Only domains whose primary purpose is beacon/pixel tracking are flagged (Faceboo
 
 - **Stale baseline in auto-detection**: The baseline is captured when the banner appears, not at the exact moment of rejection. If tracking scripts load lazily between banner appearance and rejection, they may be flagged as new.
 - **Iframe-based CMPs**: Some consent management platforms render inside cross-origin iframes, which content scripts cannot access. The manual flow still works in these cases.
-- **Cookie walls**: Some sites (The Guardian, Daily Mail, Le Monde, etc.) require a paid subscription to access the "Reject All" option. If rejection redirects to a different subdomain, the extension may not be able to resume the audit across that subdomain boundary.
+- **Cookie walls**: Some sites (The Guardian, Daily Mail, Le Monde, etc.) require a paid subscription to access the "Reject All" option. If rejection redirects to an entirely different domain (e.g., a third-party subscription platform), the extension cannot resume the audit across that domain boundary.
 - **First-party cookies only**: The Chrome cookies API scoped by domain doesn't return third-party cookies. Third-party tracking is caught by the pixel detection signal instead.
 - **Service worker lifecycle**: Chrome may terminate Manifest V3 service workers after ~5 minutes of inactivity, wiping in-memory audit state. Audits complete within ~15 seconds, so this doesn't affect normal usage.
 
