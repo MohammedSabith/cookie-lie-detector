@@ -19,5 +19,5 @@ This is a client-side browser extension with no backend or server component. The
 
 ## Out of Scope
 
-- Issues in third-party tracker databases (Disconnect, EasyPrivacy) that this extension references
+- Gaps in the built-in tracker domain list (missing trackers are a known limitation, not a vulnerability)
 - Sites intentionally blocking or detecting the extension
