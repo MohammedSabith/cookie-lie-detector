@@ -53,6 +53,8 @@ Every classification includes transparent reasoning with point values, visible o
 ### Automatic Mode
 Visit a website with a cookie banner. The extension auto-detects the banner, captures a baseline, and watches for your rejection click. After you click "Reject All," the score appears on the extension badge within ~10 seconds.
 
+If the site reloads the page after rejection (common with OneTrust and other CMPs), the extension detects the same-domain reload, preserves the audit state, and resumes automatically on the new page.
+
 ### Manual Mode
 If auto-detection doesn't catch the banner:
 1. Click the extension icon
@@ -62,6 +64,7 @@ If auto-detection doesn't catch the banner:
 
 ### Viewing Results
 - **Popup**: Shows the Lie Score, fingerprinting alert, consent violations, and a stats breakdown with tooltips explaining each metric
+- **Copy Results**: Copies a CSV row to clipboard matching the audit spreadsheet format — useful for batch-testing multiple sites
 - **View Details**: Opens a full-page report showing every cookie with its classification, confidence score, and reasoning. Also shows baseline vs. after cookie comparison, tracking pixel analysis, and fingerprinting methods detected
 - **Reset Audit**: Clears the audit state without reloading the page, so you can re-run
 
@@ -118,6 +121,7 @@ Only domains whose primary purpose is beacon/pixel tracking are flagged (Faceboo
 
 - **Stale baseline in auto-detection**: The baseline is captured when the banner appears, not at the exact moment of rejection. If tracking scripts load lazily between banner appearance and rejection, they may be flagged as new.
 - **Iframe-based CMPs**: Some consent management platforms render inside cross-origin iframes, which content scripts cannot access. The manual flow still works in these cases.
+- **Cookie walls**: Some sites (The Guardian, Daily Mail, Le Monde, etc.) require a paid subscription to access the "Reject All" option. If rejection redirects to a different subdomain, the extension may not be able to resume the audit across that subdomain boundary.
 - **First-party cookies only**: The Chrome cookies API scoped by domain doesn't return third-party cookies. Third-party tracking is caught by the pixel detection signal instead.
 - **Service worker lifecycle**: Chrome may terminate Manifest V3 service workers after ~5 minutes of inactivity, wiping in-memory audit state. Audits complete within ~15 seconds, so this doesn't affect normal usage.
 
@@ -125,10 +129,11 @@ Only domains whose primary purpose is beacon/pixel tracking are flagged (Faceboo
 
 Sites with cookie banners that work well for testing:
 - **bbc.com** — OneTrust CMP, has "Reject All"
-- **theguardian.com** — Custom CMP with reject option
-- **stackoverflow.com** — Cookie consent banner
+- **stackoverflow.com** — Cookie consent banner (scored 21 in testing)
+- **reuters.com** — OneTrust, shows Reject All (scored 21 in testing)
 - **spiegel.de** — German site, strict GDPR banner
-- **lemonde.fr** — French site, strict GDPR banner
+
+Note: Some major news sites (The Guardian, Daily Mail, Le Monde, CNN) use "cookie walls" that require a subscription to access the reject option, making them difficult to audit with this tool.
 
 ## License
 
