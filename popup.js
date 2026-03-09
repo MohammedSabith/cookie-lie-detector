@@ -19,6 +19,7 @@ const btnBaseline = $("#btn-baseline");
 const btnCapture = $("#btn-capture");
 const btnReset = $("#btn-reset");
 const btnDetails = $("#btn-details");
+const btnCopy = $("#btn-copy");
 const step1 = $("#step-1");
 const step2 = $("#step-2");
 const step3 = $("#step-3");
@@ -110,6 +111,77 @@ btnCapture.addEventListener("click", () => {
   );
 });
 
+btnCopy.addEventListener("click", () => {
+  chrome.runtime.sendMessage(
+    { type: "POPUP_GET_REPORT", tabId: currentTabId },
+    (report) => {
+      if (!report) return;
+
+      let site = "";
+      try { site = new URL(report.url).hostname; } catch {}
+
+      const score = report.lieScore ?? "";
+      const fp = report.fingerprintingInfo;
+      const fpDetected = fp && fp.detected ? "Yes" : "No";
+      const fpMethods = fp && fp.methods ? fp.methods.join("; ") : "";
+      const bannerDetected = report.bannerDetected ? "Yes" : "No";
+      const cmp = report.bannerInfo ? (report.bannerInfo.cmp || "") : "";
+      const b = report.baseline || {};
+      const c = report.current || {};
+
+      // Determine verdict
+      let verdict = "";
+      if (score === 0) verdict = "Honest";
+      else if (score <= 20) verdict = "Minor";
+      else if (score <= 50) verdict = "Suspicious";
+      else if (score <= 75) verdict = "Liar";
+      else verdict = "Shameless";
+
+      // Find top violation
+      const consentViolations = (report.violations || []).filter(
+        (v) => v.type !== "fingerprinting"
+      );
+      const topViolation = consentViolations.length > 0
+        ? consentViolations[0].message : "None";
+
+      // CSV row matching audit-results.csv columns:
+      // Site,Category,Lie Score,Verdict,Fingerprinting,FP Methods,Banner Detected,CMP,
+      // Cookies Before,Cookies After,Tracking Cookies,New After Reject,Tracking Pixels,Top Violation,Notes
+      const fields = [
+        site,
+        "",  // Category — fill manually
+        score,
+        verdict,
+        fpDetected,
+        fpMethods,
+        bannerDetected,
+        cmp,
+        b.cookieCount ?? "",
+        c.cookieCount ?? "",
+        c.trackingCookies ?? "",
+        c.newTrackingCookies ?? "",
+        c.trackingPixels ?? "",
+        topViolation,
+        "",  // Notes — fill manually
+      ];
+
+      // Escape fields with commas or quotes
+      const csvRow = fields.map((f) => {
+        const s = String(f);
+        if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+          return '"' + s.replace(/"/g, '""') + '"';
+        }
+        return s;
+      }).join(",");
+
+      navigator.clipboard.writeText(csvRow).then(() => {
+        btnCopy.textContent = "Copied!";
+        setTimeout(() => { btnCopy.textContent = "Copy Results"; }, 1500);
+      });
+    }
+  );
+});
+
 btnDetails.addEventListener("click", () => {
   chrome.tabs.create({
     url: chrome.runtime.getURL(`details.html#${currentTabId}`),
@@ -130,6 +202,7 @@ btnReset.addEventListener("click", () => {
         bannerSection.classList.add("hidden");
         violationsSection.classList.add("hidden");
         statsSection.classList.add("hidden");
+        btnCopy.classList.add("hidden");
         btnReset.classList.add("hidden");
         btnDetails.classList.add("hidden");
 
@@ -247,6 +320,7 @@ function showResults(report) {
     showStats(report);
   }
 
+  btnCopy.classList.remove("hidden");
   btnReset.classList.remove("hidden");
   btnDetails.classList.remove("hidden");
 }

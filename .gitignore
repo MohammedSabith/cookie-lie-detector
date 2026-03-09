@@ -5,3 +5,4 @@ node_modules/
 .env
 setup-repo.bat
 test-patterns.js
+audit-results.csv
