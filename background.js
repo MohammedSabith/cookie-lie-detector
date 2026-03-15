@@ -43,6 +43,20 @@ function getTabState(tabId) {
       url: "",
       finalizing: false, // Guard against concurrent finalizeAudit calls
       pendingReload: false, // Set when consent-triggered page reload detected
+      // Third-party cookie tracking via webRequest
+      trackerRequests: {
+        active: false,
+        rejectedAt: null,
+        // Tracker domains the tab made requests to, with request counts
+        beforeRejection: {},  // { "doubleclick.net": 3 }
+        afterRejection: {},   // { "google-analytics.com": 2 }
+      },
+      thirdPartyCookies: {
+        baseline: null, // Captured at rejection time for contacted tracker domains
+        after: null,    // Captured at finalize time
+      },
+      warnings: [], // [{ type, message }]
+      incognito: false,
     };
   }
   return tabState[tabId];
@@ -166,6 +180,32 @@ chrome.cookies.onChanged.addListener((changeInfo) => {
 });
 
 // =========================================================
+// Network request monitoring — tracks requests to tracker domains per tab
+// =========================================================
+chrome.webRequest.onBeforeRequest.addListener(
+  (details) => {
+    if (details.tabId < 0) return; // Not from a tab
+    if (details.type === "main_frame") return; // Skip the page navigation itself
+
+    const ts = tabState[details.tabId];
+    if (!ts || !ts.trackerRequests.active) return;
+
+    let hostname;
+    try { hostname = new URL(details.url).hostname; } catch { return; }
+
+    for (const trackerDomain of ALL_TRACKER_DOMAINS) {
+      if (hostname === trackerDomain || hostname.endsWith("." + trackerDomain)) {
+        const bucket = ts.trackerRequests.rejectedAt ? "afterRejection" : "beforeRejection";
+        ts.trackerRequests[bucket][trackerDomain] =
+          (ts.trackerRequests[bucket][trackerDomain] || 0) + 1;
+        break;
+      }
+    }
+  },
+  { urls: ["<all_urls>"] }
+);
+
+// =========================================================
 // Message handling
 // =========================================================
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -195,9 +235,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     ts.baseline.timestamp = msg.data.timestamp;
     ts.url = msg.data.url;
 
+    // Start monitoring network requests to tracker domains
+    ts.trackerRequests.active = true;
+
     // Capture chrome cookies for baseline (async, best-effort)
     // For auto-detection flow, this is the only place baseline chrome cookies get captured.
     captureChromeCookies(tabId, "baseline");
+    // Check for incognito / third-party cookie warnings
+    checkWarnings(tabId).catch(() => {});
     sendResponse({ ok: true });
     return true;
   }
@@ -205,8 +250,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // --- Content script: user rejected consent ---
   if (msg.type === "CONSENT_REJECTED") {
     ts.consentAction = "rejected";
+    ts.trackerRequests.rejectedAt = Date.now();
     ts.bannerInfo = msg.data.bannerInfo;
     updateBadge(tabId, null, "...");
+    // Snapshot third-party cookies at rejection time as baseline
+    ts._thirdPartyBaselinePromise = captureThirdPartyCookies(tabId, "baseline").catch(() => {});
     sendResponse({ ok: true });
     return true;
   }
@@ -296,15 +344,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // =========================================================
 
 async function startAuditForTab(tabId) {
+  const ts = getTabState(tabId);
   try {
     await chrome.tabs.sendMessage(parseInt(tabId), { type: "START_AUDIT" });
   } catch {}
+  // Start monitoring network requests to tracker domains
+  ts.trackerRequests.active = true;
   await captureChromeCookies(tabId, "baseline");
-  return { ok: true, phase: "baseline_captured" };
+  await checkWarnings(tabId);
+  return { ok: true, phase: "baseline_captured", warnings: ts.warnings };
 }
 
 async function captureAfterForTab(tabId) {
   const ts = getTabState(tabId);
+
+  // For manual flow, rejection happens between Start Audit and Capture After
+  if (!ts.trackerRequests.rejectedAt) {
+    ts.trackerRequests.rejectedAt = Date.now();
+    // Snapshot third-party cookies at this moment as baseline
+    await captureThirdPartyCookies(tabId, "baseline");
+  }
+
   try {
     await chrome.tabs.sendMessage(parseInt(tabId), { type: "CAPTURE_AFTER" });
   } catch {}
@@ -348,14 +408,26 @@ async function finalizeAudit(tabId) {
   ts.finalizing = true;
 
   try {
+    // Stop network request monitoring
+    ts.trackerRequests.active = false;
+
     // Ensure baseline chrome cookies are captured (may have been missed
     // if user clicked reject very quickly after banner appeared)
     if (!ts.baseline.chromeCookies) {
       await captureChromeCookies(tabId, "baseline");
     }
 
+    // Ensure third-party baseline capture is complete (fire-and-forget from CONSENT_REJECTED)
+    if (ts._thirdPartyBaselinePromise) {
+      await ts._thirdPartyBaselinePromise;
+      ts._thirdPartyBaselinePromise = null;
+    }
+
     // Capture after-state chrome cookies (includes HttpOnly cookies)
     await captureChromeCookies(tabId, "after");
+
+    // Capture third-party cookies for all contacted tracker domains
+    await captureThirdPartyCookies(tabId, "after");
 
     // Calculate the definitive score with ALL data
     calculateLieScore(tabId);
@@ -400,6 +472,89 @@ async function captureChromeCookies(tabId, phase) {
 }
 
 // =========================================================
+// Capture third-party cookies for tracker domains contacted by the tab
+// =========================================================
+async function captureThirdPartyCookies(tabId, phase) {
+  const ts = getTabState(tabId);
+  const allDomains = new Set([
+    ...Object.keys(ts.trackerRequests.beforeRejection),
+    ...Object.keys(ts.trackerRequests.afterRejection),
+  ]);
+
+  if (allDomains.size === 0) {
+    if (phase === "baseline") ts.thirdPartyCookies.baseline = [];
+    else ts.thirdPartyCookies.after = [];
+    return;
+  }
+
+  // Determine page domain to exclude first-party cookies (already captured separately)
+  let pageDomain = "";
+  try { pageDomain = new URL(ts.url).hostname; } catch {}
+
+  const allCookies = [];
+  for (const domain of allDomains) {
+    try {
+      const cookies = await chrome.cookies.getAll({ domain });
+      for (const c of cookies) {
+        const cookieDomain = (c.domain || "").replace(/^\./, "");
+        // Skip first-party cookies — already in chromeCookies
+        if (pageDomain &&
+            (cookieDomain === pageDomain ||
+             pageDomain.endsWith("." + cookieDomain) ||
+             cookieDomain.endsWith("." + pageDomain))) {
+          continue;
+        }
+        allCookies.push({
+          name: c.name,
+          value: c.value,
+          domain: c.domain,
+          isTracking: isTrackingCookie(c.name),
+          secure: c.secure,
+          httpOnly: c.httpOnly,
+          sameSite: c.sameSite,
+          expirationDate: c.expirationDate,
+          isThirdParty: true,
+        });
+      }
+    } catch {}
+  }
+
+  // Deduplicate by name + domain
+  const seen = new Set();
+  const deduped = allCookies.filter((c) => {
+    const key = `${c.name}|${(c.domain || "").replace(/^\./, "")}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  if (phase === "baseline") {
+    ts.thirdPartyCookies.baseline = deduped;
+  } else {
+    ts.thirdPartyCookies.after = deduped;
+  }
+}
+
+// =========================================================
+// Check for conditions that affect audit accuracy
+// =========================================================
+async function checkWarnings(tabId) {
+  const ts = getTabState(tabId);
+  // Skip if already checked (prevents duplicate warnings on re-detection)
+  if (ts.warnings.length > 0) return;
+  try {
+    const tab = await chrome.tabs.get(parseInt(tabId));
+    if (tab.incognito) {
+      ts.incognito = true;
+      ts.warnings.push({
+        type: "incognito",
+        message: "Incognito mode blocks third-party cookies by default. Scores may be lower than reality. For accurate results, test in a regular window.",
+      });
+    }
+  } catch {}
+}
+
+// =========================================================
 // Lie Score Calculation
 // =========================================================
 function calculateLieScore(tabId) {
@@ -413,18 +568,44 @@ function calculateLieScore(tabId) {
     pageDomain = new URL(ts.url).hostname;
   } catch {}
 
-  // Use Chrome API cookies if available (full attributes for heuristic classifier).
-  // Only fall back to content.js cookies if Chrome API capture failed.
-  const afterCookies = ts.after.chromeCookies || [];
-  const baselineCookies = ts.baseline.chromeCookies || [];
-  const useHeuristic = ts.after.chromeCookies !== null;
+  // Merge first-party (Chrome API) + third-party (tracker domain) cookies.
+  // Third-party cookies have full attributes from chrome.cookies.getAll.
+  const firstPartyAfter = ts.after.chromeCookies || [];
+  const firstPartyBaseline = ts.baseline.chromeCookies || [];
+  const thirdPartyAfter = ts.thirdPartyCookies?.after || [];
+  const thirdPartyBaseline = ts.thirdPartyCookies?.baseline || [];
 
-  const baselineNames = new Set(baselineCookies.map((c) => c.name));
+  const afterCookies = [...firstPartyAfter, ...thirdPartyAfter];
+  const baselineCookies = [...firstPartyBaseline, ...thirdPartyBaseline];
+  const useHeuristic = ts.after.chromeCookies !== null || thirdPartyAfter.length > 0;
 
-  // If we also have content.js baseline cookies, include their names too
-  // (covers cookies that Chrome API might miss due to domain scoping)
+  // Build baseline keys: name+domain for Chrome API cookies (precise matching),
+  // name-only ONLY for content.js cookies (which have no domain info).
+  // This prevents a first-party "_ga" from masking a new third-party "_ga" on a tracker domain.
+  const baselineKeysByNameDomain = new Set();
+  const baselineKeysByNameOnly = new Set();
+  for (const c of baselineCookies) {
+    const d = (c.domain || "").replace(/^\./, "");
+    if (d) {
+      baselineKeysByNameDomain.add(`${c.name}|${d}`);
+    } else {
+      baselineKeysByNameOnly.add(c.name);
+    }
+  }
+  // Content.js baseline cookies (no domain info) — name-only fallback
   for (const c of (ts.baseline.cookies || [])) {
-    baselineNames.add(c.name);
+    baselineKeysByNameOnly.add(c.name);
+  }
+
+  function isNewCookie(c) {
+    const d = (c.domain || "").replace(/^\./, "");
+    // Precise match: name+domain (for Chrome API cookies with domain info)
+    if (d && baselineKeysByNameDomain.has(`${c.name}|${d}`)) return false;
+    // Fallback: name-only match against content.js baseline (no domain available)
+    // Only used when precise match didn't hit — catches cases where Chrome API baseline
+    // capture failed but content.js captured the cookie name.
+    if (baselineKeysByNameOnly.has(c.name)) return false;
+    return true;
   }
 
   // Classify cookies
@@ -434,7 +615,7 @@ function calculateLieScore(tabId) {
     classified = afterCookies.map((c) => ({
       ...c,
       classification: classifyCookie(c, pageDomain),
-      isNew: !baselineNames.has(c.name),
+      isNew: isNewCookie(c),
     }));
   } else {
     // Only content.js data available — use simple name-pattern matching
@@ -449,9 +630,20 @@ function calculateLieScore(tabId) {
         reasons: isTrackingCookie(c.name) ? ["known tracking pattern"] : ["name-only classification"],
         scores: { tracking: isTrackingCookie(c.name) ? 40 : 0, consent: 0, functional: 0 },
       },
-      isNew: !baselineNames.has(c.name),
+      isNew: isNewCookie(c),
     }));
   }
+
+  // Store tracker request summary for the report
+  ts.trackerRequestSummary = {
+    beforeRejection: { ...ts.trackerRequests.beforeRejection },
+    afterRejection: { ...ts.trackerRequests.afterRejection },
+    totalDomains: new Set([
+      ...Object.keys(ts.trackerRequests.beforeRejection),
+      ...Object.keys(ts.trackerRequests.afterRejection),
+    ]).size,
+    afterRejectionDomains: Object.keys(ts.trackerRequests.afterRejection).length,
+  };
 
   // Store classified results for the report (must match scoring logic)
   const allTracking = classified.filter((c) => c.classification.classification === "tracking");
@@ -636,9 +828,11 @@ function buildReport(tabId) {
   const content = ts.contentReport || {};
   const cr = ts.classifiedResults;
 
-  // Use classified results for counts (consistent with score calculation)
-  const baselineCookies = ts.baseline.chromeCookies || ts.baseline.cookies || [];
-  const afterCookies = ts.after.chromeCookies || ts.after.cookies || [];
+  // Include both first-party and third-party cookies in counts
+  const baselineFirst = ts.baseline.chromeCookies || ts.baseline.cookies || [];
+  const baselineThird = ts.thirdPartyCookies?.baseline || [];
+  const afterFirst = ts.after.chromeCookies || ts.after.cookies || [];
+  const afterThird = ts.thirdPartyCookies?.after || [];
 
   return {
     phase: ts.phase,
@@ -647,20 +841,22 @@ function buildReport(tabId) {
     consentAction: ts.consentAction,
     auditStage: ts.auditStage,
     baseline: {
-      cookieCount: baselineCookies.length,
-      trackingCookies: cr ? null : baselineCookies.filter((c) => c.isTracking).length,
+      cookieCount: baselineFirst.length + baselineThird.length,
+      trackingCookies: cr ? null : baselineFirst.filter((c) => c.isTracking).length,
       timestamp: ts.baseline.timestamp,
     },
     current: {
-      cookieCount: afterCookies.length,
+      cookieCount: afterFirst.length + afterThird.length,
       // Use classifier results if available (consistent with scoring)
-      trackingCookies: cr ? cr.tracking : afterCookies.filter((c) => c.isTracking).length,
+      trackingCookies: cr ? cr.tracking : afterFirst.filter((c) => c.isTracking).length,
       newTrackingCookies: cr ? cr.newNonConsent : (ts.after.newTrackingCookies || []).length,
       persistedTracking: cr ? cr.persistedTracking : 0,
       trackingPixels: cr ? cr.newPixels : (ts.after.trackingPixels || []).length,
       timestamp: ts.after.timestamp,
     },
     fingerprintingInfo: ts.fingerprintingInfo || null,
+    trackerRequests: ts.trackerRequestSummary || null,
+    warnings: ts.warnings || [],
     bannerDetected: ts.bannerDetected || content.bannerDetected || false,
     bannerInfo: ts.bannerInfo || content.bannerInfo || null,
     url: ts.url || content.url || "",
@@ -678,14 +874,36 @@ function buildDebugReport(tabId) {
   let pageDomain = "";
   try { pageDomain = new URL(ts.url).hostname; } catch {}
 
-  // Re-classify all after cookies (same logic as calculateLieScore)
-  const afterCookies = ts.after.chromeCookies || [];
-  const baselineCookies = ts.baseline.chromeCookies || ts.baseline.cookies || [];
-  const useHeuristic = ts.after.chromeCookies !== null;
+  // Re-classify all after cookies — merge first-party + third-party (same as calculateLieScore)
+  const firstPartyAfter = ts.after.chromeCookies || [];
+  const thirdPartyAfter = ts.thirdPartyCookies?.after || [];
+  const afterCookies = [...firstPartyAfter, ...thirdPartyAfter];
 
-  const baselineNames = new Set(baselineCookies.map((c) => c.name));
+  const firstPartyBaseline = ts.baseline.chromeCookies || [];
+  const thirdPartyBaseline = ts.thirdPartyCookies?.baseline || [];
+  const baselineCookies = [...firstPartyBaseline, ...thirdPartyBaseline];
+  const useHeuristic = ts.after.chromeCookies !== null || thirdPartyAfter.length > 0;
+
+  const baselineKeysByNameDomain = new Set();
+  const baselineKeysByNameOnly = new Set();
+  for (const c of baselineCookies) {
+    const d = (c.domain || "").replace(/^\./, "");
+    if (d) {
+      baselineKeysByNameDomain.add(`${c.name}|${d}`);
+    } else {
+      baselineKeysByNameOnly.add(c.name);
+    }
+  }
+  // Content.js baseline cookies (no domain info) — name-only fallback
   for (const c of (ts.baseline.cookies || [])) {
-    baselineNames.add(c.name);
+    baselineKeysByNameOnly.add(c.name);
+  }
+
+  function isNewCookie(c) {
+    const d = (c.domain || "").replace(/^\./, "");
+    if (d && baselineKeysByNameDomain.has(`${c.name}|${d}`)) return false;
+    if (baselineKeysByNameOnly.has(c.name)) return false;
+    return true;
   }
 
   let classifiedCookies;
@@ -700,7 +918,8 @@ function buildDebugReport(tabId) {
         confidence: result.confidence,
         reasons: result.reasons,
         scores: result.scores,
-        isNew: !baselineNames.has(c.name),
+        isNew: isNewCookie(c),
+        isThirdParty: c.isThirdParty || false,
         httpOnly: c.httpOnly,
         secure: c.secure,
         sameSite: c.sameSite,
@@ -717,7 +936,8 @@ function buildDebugReport(tabId) {
       confidence: isTrackingCookie(c.name) ? 0.8 : 0.3,
       reasons: isTrackingCookie(c.name) ? ["known tracking name pattern"] : ["name-only, no attributes available"],
       scores: { tracking: isTrackingCookie(c.name) ? 40 : 0, consent: 0, functional: 0 },
-      isNew: !baselineNames.has(c.name),
+      isNew: isNewCookie(c),
+      isThirdParty: false,
       httpOnly: null,
       secure: null,
       sameSite: null,
@@ -743,10 +963,12 @@ function buildDebugReport(tabId) {
     consentAction: ts.consentAction,
     bannerInfo: ts.bannerInfo || content.bannerInfo || null,
     classifiedCookies,
-    baselineCookies: baselineCookies.map((c) => ({
+    // For display: fall back to content.js cookies if Chrome API baseline is empty
+    baselineCookies: (baselineCookies.length > 0 ? baselineCookies : (ts.baseline.cookies || [])).map((c) => ({
       name: c.name,
       domain: c.domain || "N/A",
       isTracking: c.isTracking || isTrackingCookie(c.name),
+      isThirdParty: c.isThirdParty || false,
       httpOnly: c.httpOnly,
       secure: c.secure,
       sameSite: c.sameSite,
@@ -756,6 +978,8 @@ function buildDebugReport(tabId) {
       after: ts.after.trackingPixels || [],
     },
     fingerprinting: ts.after.fingerprinting || content.fingerprinting || {},
+    trackerRequests: ts.trackerRequestSummary || null,
+    warnings: ts.warnings || [],
     after: {
       timestamp: ts.after.timestamp,
     },

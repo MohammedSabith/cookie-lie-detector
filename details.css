@@ -422,7 +422,53 @@ tr:hover td {
 .badge-functional { background: rgba(129,140,248,0.15); color: var(--accent); }
 .badge-unknown { background: rgba(156,163,175,0.15); color: var(--text-muted); }
 .badge-new { background: rgba(245,158,11,0.15); color: var(--yellow); }
+.badge-thirdparty { background: rgba(249,115,22,0.15); color: var(--orange); }
 .badge-baseline { background: rgba(156,163,175,0.1); color: var(--text-muted); }
+
+/* Warning items */
+.warning-item {
+  background: rgba(245,158,11,0.1);
+  border: 1px solid rgba(245,158,11,0.25);
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--yellow);
+  line-height: 1.5;
+}
+.warning-badge {
+  display: inline-block;
+  background: rgba(245,158,11,0.2);
+  color: var(--yellow);
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  text-transform: uppercase;
+  margin-right: 6px;
+}
+
+/* Tracker request chips */
+.tracker-group { margin-top: 10px; }
+.tracker-group-title {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+.tracker-chip {
+  display: inline-block;
+  background: rgba(156,163,175,0.1);
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  margin: 2px 4px 2px 0;
+}
+.tracker-chip-after {
+  background: rgba(239,68,68,0.12);
+  color: var(--red);
+}
 
 .reasons-list {
   font-size: 11px;

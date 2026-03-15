@@ -51,6 +51,11 @@ function fetchAndDisplay() {
     (report) => {
       if (!report) return;
 
+      // Show warnings (incognito, third-party blocking) as early as possible
+      if (report.warnings && report.warnings.length > 0) {
+        showWarnings(report.warnings);
+      }
+
       // Show banner info if detected
       if (report.bannerDetected) {
         showBannerInfo(report.bannerInfo);
@@ -132,10 +137,10 @@ btnCopy.addEventListener("click", () => {
       // Determine verdict
       let verdict = "";
       if (score === 0) verdict = "Honest";
-      else if (score <= 20) verdict = "Minor";
-      else if (score <= 50) verdict = "Suspicious";
-      else if (score <= 75) verdict = "Liar";
-      else verdict = "Shameless";
+      else if (score <= 20) verdict = "Minor Violations";
+      else if (score <= 50) verdict = "Non-Compliant";
+      else if (score <= 75) verdict = "Major Violations";
+      else verdict = "Blatant Disregard";
 
       // Find top violation
       const consentViolations = (report.violations || []).filter(
@@ -145,9 +150,10 @@ btnCopy.addEventListener("click", () => {
         ? consentViolations[0].message : "None";
 
       // CSV row matching audit-results.csv columns:
-      // Site,Category,Lie Score,Verdict,Fingerprinting,FP Methods,Banner Detected,CMP,
+      // #,Site,Category,Lie Score,Verdict,Fingerprinting,FP Methods,Banner Detected,CMP,
       // Cookies Before,Cookies After,Tracking Cookies,New After Reject,Tracking Pixels,Top Violation,Notes
       const fields = [
+        "",  // # — row number, fill manually
         site,
         "",  // Category — fill manually
         score,
@@ -177,6 +183,9 @@ btnCopy.addEventListener("click", () => {
       navigator.clipboard.writeText(csvRow).then(() => {
         btnCopy.textContent = "Copied!";
         setTimeout(() => { btnCopy.textContent = "Copy Results"; }, 1500);
+      }).catch(() => {
+        btnCopy.textContent = "Copy failed";
+        setTimeout(() => { btnCopy.textContent = "Copy Results"; }, 1500);
       });
     }
   );
@@ -195,9 +204,11 @@ btnReset.addEventListener("click", () => {
       chrome.tabs.sendMessage(currentTabId, { type: "RESET_AUDIT" }, () => {
         // Reset the popup UI to initial state
         resultsShown = false;
+        warningsShown = false;
         clearInterval(pollInterval);
 
         scoreSection.classList.add("hidden");
+        $("#warning-banner").classList.add("hidden");
         $("#fingerprint-alert").classList.add("hidden");
         bannerSection.classList.add("hidden");
         violationsSection.classList.add("hidden");
@@ -353,21 +364,31 @@ function showLieScore(score) {
   requestAnimationFrame(animate);
 
   if (score === 0) {
-    scoreVerdict.textContent = "Honest! This site respects your choice.";
+    scoreVerdict.textContent = "This site respected your rejection.";
     scoreVerdict.style.color = "var(--green)";
   } else if (score <= 20) {
-    scoreVerdict.textContent = "Minor issues. Mostly respectful.";
+    scoreVerdict.textContent = "Minor consent violations detected.";
     scoreVerdict.style.color = "var(--yellow)";
   } else if (score <= 50) {
-    scoreVerdict.textContent = "Suspicious. Partial consent violations.";
+    scoreVerdict.textContent = "Consent violations found. Tracking continued after rejection.";
     scoreVerdict.style.color = "var(--orange)";
   } else if (score <= 75) {
-    scoreVerdict.textContent = "Liar. Significant consent violations.";
+    scoreVerdict.textContent = "Significant consent violations. Your rejection was largely ignored.";
     scoreVerdict.style.color = "var(--red)";
   } else {
-    scoreVerdict.textContent = "Shameless liar. Your rejection was completely ignored.";
+    scoreVerdict.textContent = "Blatant disregard for your consent. Extensive tracking despite rejection.";
     scoreVerdict.style.color = "var(--red)";
   }
+}
+
+let warningsShown = false;
+function showWarnings(warnings) {
+  if (warningsShown) return;
+  warningsShown = true;
+  const banner = $("#warning-banner");
+  const msg = $("#warning-message");
+  msg.textContent = warnings.map((w) => w.message).join(" ");
+  banner.classList.remove("hidden");
 }
 
 function showBannerInfo(info) {

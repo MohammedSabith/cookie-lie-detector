@@ -5,40 +5,44 @@
 
 const TRACKER_DB = {
   // --- Advertising / Marketing ---
+  // Only domains whose PRIMARY purpose is ad serving / ad tracking.
   advertising: [
     "doubleclick.net",
     "googlesyndication.com",
     "googleadservices.com",
     "google-analytics.com",
     "googletagmanager.com",
-    "adnxs.com",
-    "adsrvr.org",
+    "adnxs.com",               // AppNexus / Xandr
+    "adsrvr.org",              // The Trade Desk
     "amazon-adsystem.com",
     "criteo.com",
     "criteo.net",
-    "demdex.net",
-    "facebook.net",
-    "fbcdn.net",
-    "moatads.com",
-    "outbrain.com",
-    "taboola.com",
-    "tapad.com",
-    "rubiconproject.com",
+    "demdex.net",              // Adobe Audience Manager
+    "facebook.net",            // Facebook tracking SDK (NOT facebook.com or fbcdn.net)
+    "moatads.com",             // Oracle Moat ad verification
+    "outbrain.com",            // Content recommendation + tracking
+    "taboola.com",             // Content recommendation + tracking
+    "tapad.com",               // Cross-device tracking
+    "rubiconproject.com",      // Magnite ad exchange
     "pubmatic.com",
     "openx.net",
-    "casalemedia.com",
-    "indexww.com",
+    "casalemedia.com",         // Index Exchange
+    "indexww.com",             // Index Exchange
     "bidswitch.net",
     "sharethrough.com",
     "smartadserver.com",
-    "media.net",
+    "media.net",               // Yahoo/Bing contextual ads
     "adform.net",
-    "bing.com/bat.js",
+    "bat.bing.com",            // Bing UET tag (specific subdomain, NOT bing.com)
     "ads-twitter.com",
-    "t.co",
+    "t.co",                    // Twitter click tracker (only sub-resource loads are caught)
+    // REMOVED: fbcdn.net — Facebook CDN, serves static assets (images/CSS/JS), not tracking
+    // REMOVED: bing.com/bat.js — was extracting to bing.com (all of Bing). Fixed → bat.bing.com
   ],
 
   // --- Analytics ---
+  // Only services that track user behavior. Excludes APM, privacy-focused analytics,
+  // A/B testing, and debugging tools.
   analytics: [
     "google-analytics.com",
     "analytics.google.com",
@@ -55,44 +59,47 @@ const TRACKER_DB = {
     "mouseflow.com",
     "luckyorange.com",
     "crazyegg.com",
-    "optimizely.com",
-    "newrelic.com",
-    "nr-data.net",
-    "matomo.cloud",
-    "plausible.io",
-    "clarity.ms",
-    "clarium.io",
-    "logrocket.com",
-    "logrocket.io",
+    "clarity.ms",              // Microsoft Clarity session recording
     "smartlook.com",
-    "posthog.com",
+    // REMOVED: plausible.io — privacy-focused, no cookies, GDPR-compliant without consent
+    // REMOVED: posthog.com — open-source, self-hostable, privacy-focused
+    // REMOVED: matomo.cloud — privacy-respecting analytics alternative
+    // REMOVED: newrelic.com / nr-data.net — APM (server monitoring), not user tracking
+    // REMOVED: optimizely.com — A/B testing, not cross-site tracking
+    // REMOVED: logrocket.com / logrocket.io — debugging/error replay tool
+    // REMOVED: clarium.io — unclear/defunct
   ],
 
   // --- Social Media Tracking ---
+  // Only SPECIFIC tracking subdomains. Main domains (facebook.com, tiktok.com, etc.)
+  // excluded because they serve legitimate embeds, widgets, and content.
   social: [
-    "connect.facebook.net",
-    "facebook.com/tr",
-    "platform.twitter.com",
-    "ads.linkedin.com",
-    "snap.licdn.com",
-    "platform.linkedin.com",
-    "px.ads.linkedin.com",
-    "sc-static.net",
-    "snapchat.com",
-    "tiktok.com",
-    "analytics.tiktok.com",
-    "pinterest.com",
-    "pins.reddit.com",
-    "reddit.com/rpixel",
+    "connect.facebook.net",    // Facebook SDK / tracking pixel loader
+    "ads.linkedin.com",        // LinkedIn ad tracking
+    "snap.licdn.com",          // LinkedIn tracking pixel
+    "px.ads.linkedin.com",     // LinkedIn Insight Tag
+    "analytics.tiktok.com",    // TikTok analytics pixel
+    "ct.pinterest.com",        // Pinterest conversion tag
+    "pins.reddit.com",         // Reddit conversion pixel
+    "ads-twitter.com",         // Twitter/X ad tracking
+    "analytics.twitter.com",   // Twitter/X analytics
+    "sc-static.net",           // Snapchat ad tracking SDK
+    // REMOVED: facebook.com/tr — was extracting to facebook.com (all of Facebook)
+    // REMOVED: reddit.com/rpixel — was extracting to reddit.com (all of Reddit)
+    // REMOVED: platform.twitter.com — serves tweet embeds, not just tracking
+    // REMOVED: platform.linkedin.com — serves Sign-in buttons, profile widgets
+    // REMOVED: tiktok.com — main domain, serves embedded videos
+    // REMOVED: pinterest.com — main domain, serves embeds/buttons
+    // REMOVED: snapchat.com — main domain
   ],
 
   // --- Tracking Pixels / Beacons ---
-  // These domains are specifically known for pixel/beacon-based tracking
-  // (tiny invisible images or iframes that fire HTTP requests to log visits).
-  // Kept separate from analytics — loading a Hotjar JS SDK is different
-  // from Facebook embedding a 1x1 tracking pixel.
+  // Used ONLY by PIXEL_DOMAINS for detecting 1x1 images and hidden iframes.
+  // NOT added to ALL_TRACKER_DOMAINS — pixel detection context (tiny hidden images)
+  // is different from network request monitoring (where facebook.com could be a
+  // legitimate embed). Broader domains are safe here because we only check them
+  // against actual hidden/1x1 elements.
   pixels: [
-    // Social media pixels — fire invisible beacons to log page visits
     "facebook.com",              // Facebook Pixel (/tr endpoint)
     "connect.facebook.net",      // Facebook SDK pixel
     "bat.bing.com",              // Bing UET tag
@@ -104,57 +111,62 @@ const TRACKER_DB = {
     "snap.licdn.com",            // LinkedIn tracking pixel
     "analytics.tiktok.com",      // TikTok pixel
 
-    // Ad conversion pixels — track conversions, not content delivery
     "googleadservices.com",      // Google Ads conversion tracking
     "doubleclick.net",           // Google DoubleClick pixel
     "googlesyndication.com",     // Google ad beacon
 
-    // Measurement/verification pixels
     "pixel.quantserve.com",      // Quantcast measurement pixel
     "pixel.adsafeprotected.com", // IAS ad verification pixel
     "sp.analytics.yahoo.com",    // Yahoo analytics pixel
     "demdex.net",                // Adobe Audience Manager sync pixel
-
-    // NOT included: ad exchanges/SSPs that serve visible content
-    // (Criteo, Taboola, Outbrain, PubMatic, RubiconProject, etc.)
-    // These are caught by cookie classification instead.
   ],
 
   // --- Fingerprinting Services ---
+  // Only actual fingerprinting-as-a-service providers used for tracking.
+  // Bot detection / fraud prevention services REMOVED — they fingerprint
+  // for security (stopping bots, preventing fraud), not cross-site tracking.
+  // Their cookies serve legitimate security functions.
   fingerprinting: [
     "fingerprintjs.com",
     "fpjs.io",
-    "arkoselabs.com",
-    "perimeterx.net",
-    "datadome.co",
-    "distil.it",
-    "iovation.com",
-    "threatmetrix.com",
+    // REMOVED: arkoselabs.com — CAPTCHA / bot detection (security)
+    // REMOVED: perimeterx.net — bot protection / HUMAN Security (security)
+    // REMOVED: datadome.co — bot detection (security)
+    // REMOVED: distil.it — bot detection / Imperva (security)
+    // REMOVED: iovation.com — fraud prevention / TransUnion (security)
+    // REMOVED: threatmetrix.com — fraud prevention / LexisNexis (security)
   ],
 };
 
-// Flatten all tracker domains into a single Set for fast lookup
+// Flatten tracker domains into lookup structures.
+// ALL_TRACKER_DOMAINS — used by webRequest monitoring, cookie capture, heuristic classifier.
+// Must be precise: only domains that are ALWAYS trackers regardless of context.
+// Excludes pixel-only domains (facebook.com, etc.) to prevent false positives from
+// legitimate embeds/widgets triggering tracker detection.
 const ALL_TRACKER_DOMAINS = new Set();
 const TRACKER_CATEGORIES = {};
 
-// Separate set for pixel-specific domains (used by pixel detection only).
-// ONLY includes domains whose primary purpose is beacon/pixel tracking.
-// Ad platforms (Taboola, Criteo, PubMatic, etc.) excluded — they serve
-// visible content and would cause false positives. They're still caught
-// by cookie classification if they set tracking cookies after rejection.
+// PIXEL_DOMAINS — used ONLY by content.js pixel detection (1x1 images, hidden iframes).
+// Can include broader domains because pixel detection context (tiny hidden elements)
+// has inherently low false-positive risk.
 const PIXEL_DOMAINS = new Set();
 for (const domain of TRACKER_DB.pixels) {
-  PIXEL_DOMAINS.add(domain.split("/")[0]);
+  PIXEL_DOMAINS.add(domain);
 }
 
 for (const [category, domains] of Object.entries(TRACKER_DB)) {
   for (const domain of domains) {
-    const cleanDomain = domain.split("/")[0]; // Remove path portions
-    ALL_TRACKER_DOMAINS.add(cleanDomain);
-    if (!TRACKER_CATEGORIES[cleanDomain]) {
-      TRACKER_CATEGORIES[cleanDomain] = [];
+    // Populate category lookup for all domains (used by checkPixelTracker reporting)
+    if (!TRACKER_CATEGORIES[domain]) {
+      TRACKER_CATEGORIES[domain] = [];
     }
-    TRACKER_CATEGORIES[cleanDomain].push(category);
+    TRACKER_CATEGORIES[domain].push(category);
+
+    // Only add non-pixel domains to ALL_TRACKER_DOMAINS.
+    // Pixel domains are checked separately via PIXEL_DOMAINS in content.js.
+    if (category !== "pixels") {
+      ALL_TRACKER_DOMAINS.add(domain);
+    }
   }
 }
 
@@ -188,41 +200,44 @@ function checkTracker(url) {
 // Known name patterns (still useful as a strong signal)
 // =========================================================
 const TRACKING_COOKIE_PATTERNS = [
-  /^_ga/,          // Google Analytics
-  /^_gid/,         // Google Analytics
-  /^_gat/,         // Google Analytics
-  /^_gcl/,         // Google Ads
-  /^_fbp/,         // Facebook Pixel
-  /^_fbc/,         // Facebook Click
+  /^_ga$/,         // Google Analytics (exact: _ga)
+  /^_ga_/,         // Google Analytics (prefixed: _ga_XXXXXXX)
+  /^_gid$/,        // Google Analytics
+  /^_gat(_|$)/,    // Google Analytics (_gat or _gat_UA-XXXXX, not _gateway)
+  /^_gcl_/,        // Google Ads (_gcl_au, _gcl_aw, etc.)
+  /^_fbp$/,        // Facebook Pixel
+  /^_fbc$/,        // Facebook Click
   /^fr$/,          // Facebook
   /^_pin_unauth/,  // Pinterest
-  /^_uetsid/,      // Bing UET
-  /^_uetvid/,      // Bing UET
+  /^_uetsid$/,     // Bing UET
+  /^_uetvid$/,     // Bing UET
   /^_tt_/,         // TikTok
-  /^__hssc/,       // HubSpot
-  /^__hssrc/,      // HubSpot
-  /^__hstc/,       // HubSpot
-  /^hubspotutk/,   // HubSpot
-  /^li_sugr/,      // LinkedIn
-  /^bcookie/,      // LinkedIn
-  /^lidc/,         // LinkedIn
-  /^_hjid/,        // Hotjar
-  /^_hjSession/,   // Hotjar
-  /^mp_/,          // Mixpanel
+  /^__hssc$/,      // HubSpot
+  /^__hssrc$/,     // HubSpot
+  /^__hstc$/,      // HubSpot
+  /^hubspotutk$/,  // HubSpot
+  /^li_sugr$/,     // LinkedIn
+  /^bcookie$/,     // LinkedIn (exact match only)
+  /^lidc$/,        // LinkedIn (exact match only)
+  /^_hjid$/,       // Hotjar
+  /^_hjSession/,   // Hotjar (_hjSessionUser_*, _hjSession_*)
+  /^mp_[0-9a-f]+_mixpanel$/, // Mixpanel (specific format: mp_{token}_mixpanel)
   /^amplitude_id/, // Amplitude
-  /^optimizelyEndUserId/, // Optimizely
-  /^_clck/,        // Microsoft Clarity
-  /^_clsk/,        // Microsoft Clarity
+  /^optimizelyEndUserId$/, // Optimizely
+  /^_clck$/,       // Microsoft Clarity
+  /^_clsk$/,       // Microsoft Clarity
   /^IDE$/,         // DoubleClick
   /^NID$/,         // Google
-  /^test_cookie/,  // DoubleClick
+  /^test_cookie$/, // DoubleClick
   /^YSC$/,         // YouTube
-  /^VISITOR_INFO/,  // YouTube
+  /^VISITOR_INFO/,  // YouTube (VISITOR_INFO1_LIVE, etc.)
 ];
 
 const CONSENT_COOKIE_PATTERNS = [
   /^OptanonConsent/,         // OneTrust
   /^OptanonAlertBoxClosed/,  // OneTrust
+  /^OneTrust/,               // OneTrust (various: OneTrustWPCCPAGoogleOptOut, etc.)
+  /^usprivacy$/,             // US Privacy / CCPA signal string
   /^CookieConsent/,          // Cookiebot
   /^CookieControl/,          // Civic
   /^euconsent/,              // IAB TCF
@@ -232,13 +247,14 @@ const CONSENT_COOKIE_PATTERNS = [
   /^cc_cookie/,              // Cookie Consent (Osano)
   /^klaro/,                  // Klaro
   /^didomi/,                 // Didomi
-  /^sp_/,                    // SourcePoint
+  /^sp_consent/,             // SourcePoint (specific consent cookie, not broad sp_)
   /^truste/i,                // TrustArc
   /^iubenda/,                // Iubenda
   /^_iub_cs/,                // Iubenda
-  /^__cf_bm/,                // Cloudflare bot mgmt (functional)
-  /^cf_clearance/,           // Cloudflare (functional)
   /^consent/i,               // Generic consent
+  // NOTE: __cf_bm and cf_clearance are Cloudflare security cookies (bot mgmt).
+  // They are NOT consent cookies. They are handled as "functional" by the
+  // heuristic classifier (HttpOnly + Secure + first-party → +10 functional).
 ];
 
 /**

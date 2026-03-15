@@ -48,6 +48,53 @@ async function init() {
 }
 
 function renderReport(report) {
+  // Warnings
+  if (report.warnings && report.warnings.length > 0) {
+    const section = $("#warnings-section");
+    section.classList.remove("hidden");
+    const list = $("#warnings-list");
+    for (const w of report.warnings) {
+      const div = document.createElement("div");
+      div.className = "warning-item";
+      div.innerHTML = `<span class="warning-badge">${esc(w.type)}</span> ${esc(w.message)}`;
+      list.appendChild(div);
+    }
+  }
+
+  // Tracker network requests
+  if (report.trackerRequests && report.trackerRequests.totalDomains > 0) {
+    const section = $("#tracker-requests-section");
+    section.classList.remove("hidden");
+    $("#tracker-requests-summary").textContent =
+      `${report.trackerRequests.totalDomains} tracker ${report.trackerRequests.totalDomains === 1 ? "domain" : "domains"} contacted total, ` +
+      `${report.trackerRequests.afterRejectionDomains} after rejection`;
+
+    const before = report.trackerRequests.beforeRejection || {};
+    const after = report.trackerRequests.afterRejection || {};
+
+    if (Object.keys(before).length > 0) {
+      const container = $("#tracker-requests-before");
+      container.innerHTML = `<h3 class="tracker-group-title">Before Rejection</h3>`;
+      for (const [domain, count] of Object.entries(before)) {
+        const chip = document.createElement("span");
+        chip.className = "tracker-chip";
+        chip.textContent = `${domain} (${count})`;
+        container.appendChild(chip);
+      }
+    }
+
+    if (Object.keys(after).length > 0) {
+      const container = $("#tracker-requests-after");
+      container.innerHTML = `<h3 class="tracker-group-title">After Rejection</h3>`;
+      for (const [domain, count] of Object.entries(after)) {
+        const chip = document.createElement("span");
+        chip.className = "tracker-chip tracker-chip-after";
+        chip.textContent = `${domain} (${count})`;
+        container.appendChild(chip);
+      }
+    }
+  }
+
   // Header
   $("#site-url").textContent = report.url;
   if (report.after.timestamp) {
@@ -209,6 +256,7 @@ function renderReport(report) {
           <span class="cc-domain" title="${esc(c.domain || "")}">${esc(c.domain || "—")}</span>
           <div class="cc-meta">
             ${cls !== "unknown" ? `<span class="badge badge-${cls}">${cls}</span>` : ""}
+            ${c.isThirdParty ? '<span class="badge badge-thirdparty">3P</span>' : ''}
             ${c.isNew ? '<span class="badge badge-new">NEW</span>' : ''}
             <span class="cc-expiry">${expiryStr}</span>
             <span class="cc-arrow">&#9654;</span>
