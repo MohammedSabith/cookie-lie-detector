@@ -248,7 +248,7 @@ const CONSENT_COOKIE_PATTERNS = [
   /^klaro/,                  // Klaro
   /^didomi/,                 // Didomi
   /^sp_consent/,             // SourcePoint (specific consent cookie, not broad sp_)
-  /^truste/i,                // TrustArc
+  /^truste[._-]/i,           // TrustArc (truste.consent, truste-consent, not "trusted")
   /^iubenda/,                // Iubenda
   /^_iub_cs/,                // Iubenda
   /^consent/i,               // Generic consent
