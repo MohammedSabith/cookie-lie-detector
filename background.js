@@ -238,9 +238,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // Start monitoring network requests to tracker domains
     ts.trackerRequests.active = true;
 
-    // Capture chrome cookies for baseline (async, best-effort)
-    // For auto-detection flow, this is the only place baseline chrome cookies get captured.
-    captureChromeCookies(tabId, "baseline");
+    // Capture chrome cookies for baseline (async, best-effort).
+    // This will be overwritten by CONSENT_REJECTED with a fresher snapshot,
+    // but serves as fallback if CONSENT_REJECTED never fires.
+    if (!ts.consentAction) {
+      captureChromeCookies(tabId, "baseline");
+    }
     // Check for incognito / third-party cookie warnings
     checkWarnings(tabId).catch(() => {});
     sendResponse({ ok: true });
@@ -256,10 +259,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // Re-capture baselines at rejection time.
     // The original baseline was captured at banner detection time, which may be
     // seconds or minutes earlier. Scripts that loaded between banner appearance
-    // and rejection may have set cookies that should be in the baseline.
+    // and rejection may have set cookies or loaded pixels that should be in the baseline.
     // This overwrites the stale banner-time baseline with the accurate pre-rejection state.
     if (msg.data.cookies) {
       ts.baseline.cookies = msg.data.cookies;
+    }
+    if (msg.data.trackingPixels) {
+      ts.baseline.trackingPixels = msg.data.trackingPixels;
     }
     captureChromeCookies(tabId, "baseline");
     // Snapshot third-party cookies at rejection time as baseline
@@ -368,9 +374,12 @@ async function captureAfterForTab(tabId) {
   const ts = getTabState(tabId);
 
   // For manual flow, rejection happens between Start Audit and Capture After.
-  // Re-capture first-party baseline now — the original was from "Start Audit" time,
-  // which may be stale if scripts loaded cookies between then and now.
-  await captureChromeCookies(tabId, "baseline");
+  // The baseline from "Start Audit" time may be stale, but we can't re-capture it
+  // here because "Capture After" runs AFTER rejection — we'd overwrite the
+  // pre-rejection baseline with post-rejection state, making the diff empty.
+  // The CONSENT_REJECTED handler re-captures the baseline if auto-detection caught
+  // the rejection. If it didn't (iframe CMP, etc.), the Start Audit baseline is
+  // the best we have — this is a documented limitation of the manual flow.
   if (!ts.trackerRequests.rejectedAt) {
     ts.trackerRequests.rejectedAt = Date.now();
     // Snapshot third-party cookies at this moment as baseline
