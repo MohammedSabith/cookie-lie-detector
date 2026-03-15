@@ -228,6 +228,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   // --- Content script: baseline auto-captured ---
   if (msg.type === "BASELINE_CAPTURED") {
+    // If rejection already happened (e.g., page reload re-detected the banner),
+    // don't overwrite the rejection-time baseline or reset the phase.
+    if (ts.consentAction === "rejected" || ts.phase === "auditing" || ts.phase === "done") {
+      sendResponse({ ok: true });
+      return true;
+    }
+
     ts.phase = "baseline_captured";
     ts.baseline.cookies = msg.data.cookies;
     ts.baseline.trackingPixels = msg.data.trackingPixels;
@@ -241,9 +248,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // Capture chrome cookies for baseline (async, best-effort).
     // This will be overwritten by CONSENT_REJECTED with a fresher snapshot,
     // but serves as fallback if CONSENT_REJECTED never fires.
-    if (!ts.consentAction) {
-      captureChromeCookies(tabId, "baseline");
-    }
+    captureChromeCookies(tabId, "baseline");
     // Check for incognito / third-party cookie warnings
     checkWarnings(tabId).catch(() => {});
     sendResponse({ ok: true });
