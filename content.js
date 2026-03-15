@@ -514,6 +514,11 @@
       return; // Already processing
     }
 
+    // Re-capture DOM cookies right before rejection.
+    // The original baseline was captured at banner detection time, which may be
+    // seconds earlier. Scripts that loaded in between may have set new cookies.
+    state.domCookiesBefore = parseCookies();
+
     state.phase = "rejected";
     state.rejectedAt = Date.now();
 
@@ -522,6 +527,7 @@
       data: {
         url: window.location.href,
         bannerInfo: state.bannerInfo,
+        cookies: state.domCookiesBefore,
         timestamp: state.rejectedAt,
       },
     });

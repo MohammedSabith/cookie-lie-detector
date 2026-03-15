@@ -253,6 +253,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     ts.trackerRequests.rejectedAt = Date.now();
     ts.bannerInfo = msg.data.bannerInfo;
     updateBadge(tabId, null, "...");
+    // Re-capture baselines at rejection time.
+    // The original baseline was captured at banner detection time, which may be
+    // seconds or minutes earlier. Scripts that loaded between banner appearance
+    // and rejection may have set cookies that should be in the baseline.
+    // This overwrites the stale banner-time baseline with the accurate pre-rejection state.
+    if (msg.data.cookies) {
+      ts.baseline.cookies = msg.data.cookies;
+    }
+    captureChromeCookies(tabId, "baseline");
     // Snapshot third-party cookies at rejection time as baseline
     ts._thirdPartyBaselinePromise = captureThirdPartyCookies(tabId, "baseline").catch(() => {});
     sendResponse({ ok: true });
@@ -358,7 +367,10 @@ async function startAuditForTab(tabId) {
 async function captureAfterForTab(tabId) {
   const ts = getTabState(tabId);
 
-  // For manual flow, rejection happens between Start Audit and Capture After
+  // For manual flow, rejection happens between Start Audit and Capture After.
+  // Re-capture first-party baseline now — the original was from "Start Audit" time,
+  // which may be stale if scripts loaded cookies between then and now.
+  await captureChromeCookies(tabId, "baseline");
   if (!ts.trackerRequests.rejectedAt) {
     ts.trackerRequests.rejectedAt = Date.now();
     // Snapshot third-party cookies at this moment as baseline
