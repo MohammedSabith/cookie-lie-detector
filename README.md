@@ -1,6 +1,6 @@
 # Cookie Consent Lie Detector
 
-A Chrome extension that audits whether websites actually respect your "Reject All" cookie choice. It captures a baseline before you interact with the consent banner, monitors what happens after you click reject, and generates a Lie Score with detailed evidence.
+A Chrome extension that audits whether websites actually respect your "Reject All" cookie choice. It captures a baseline before you interact with the consent banner, monitors what happens after you click reject — including third-party tracker cookies and network requests to ad-tech domains — and generates a Lie Score with detailed evidence.
 
 Research by ETH Zurich found that the vast majority of websites using consent management platforms have at least one cookie consent violation ([CookieBlock, 2022](https://github.com/dibollinger/CookieBlock)). This tool makes those violations visible.
 
@@ -16,10 +16,11 @@ Research by ETH Zurich found that the vast majority of websites using consent ma
 
 | Signal | What It Means | Contributes to Score |
 |---|---|---|
-| **Persisted Tracking Cookies** | Known tracking cookies (Google Analytics, Facebook, etc.) still present after rejection | Yes (0-35 pts) |
-| **New Tracking Cookies** | Tracking cookies the site actively set AFTER you clicked reject | Yes (0-25 pts) |
+| **Persisted Tracking Cookies** | Known tracking cookies (Google Analytics, Facebook, etc.) still present after rejection — includes both first-party and third-party tracker domain cookies | Yes (0-35 pts) |
+| **New Tracking Cookies** | Tracking cookies the site actively set AFTER you clicked reject — caught via heuristic classification on first-party and snapshot comparison on third-party tracker domains | Yes (0-25 pts) |
 | **Unexpected New Cookies** | Non-consent cookies that appeared after rejection | Yes (0-15 pts) |
 | **New Tracking Pixels** | Invisible 1x1 images/iframes from tracker domains loaded after rejection | Yes (0-20 pts) |
+| **Tracker Network Requests** | Network requests to known ad-tech domains after rejection (e.g., doubleclick.net, criteo.com) — shown in the Details report | Informational (not scored) |
 | **Browser Fingerprinting** | Canvas, WebGL, Audio, Font, and MediaDevice fingerprinting detected | Shown separately (not in consent score) |
 
 Fingerprinting is reported as a separate alert because it operates independently of cookie consent. Rejecting cookies doesn't stop fingerprinting, and a site that removes all cookies but fingerprints you isn't technically lying about cookies.
@@ -63,9 +64,9 @@ If auto-detection doesn't catch the banner:
 4. Click **Capture After Rejection**
 
 ### Viewing Results
-- **Popup**: Shows the Lie Score, fingerprinting alert, consent violations, and a stats breakdown with tooltips explaining each metric
+- **Popup**: Shows the Lie Score, warnings (e.g., incognito mode), fingerprinting alert, consent violations, and a stats breakdown with tooltips explaining each metric
 - **Copy Results**: Copies a CSV row to clipboard matching the audit spreadsheet format — useful for batch-testing multiple sites
-- **View Details**: Opens a full-page report showing every cookie with its classification, confidence score, and reasoning. Also shows baseline vs. after cookie comparison, tracking pixel analysis, and fingerprinting methods detected
+- **View Details**: Opens a full-page report showing every cookie with its classification, confidence score, and reasoning. Also shows tracker domains contacted (before/after rejection), third-party cookies with "3P" badges, baseline vs. after cookie comparison, tracking pixel analysis, and fingerprinting methods detected
 - **Reset Audit**: Clears the audit state without reloading the page, so you can re-run
 
 ## Banner Detection
@@ -87,13 +88,13 @@ Three strategies are used, with fallback priority:
 
 ```
 cookie-lie-detector/
-  manifest.json              — Chrome Extension Manifest V3
-  background.js              — Service worker: cookie monitoring, scoring engine, audit coordination
+  manifest.json              — Chrome Extension Manifest V3 (permissions: cookies, storage, activeTab, webNavigation, webRequest)
+  background.js              — Service worker: cookie monitoring, webRequest tracker monitoring, scoring engine, audit coordination
   content.js                 — Content script (ISOLATED world): banner detection, pixel detection, consent monitoring
   fingerprint-detector.js    — Content script (MAIN world): detects fingerprinting via API monkey-patching
-  trackers.js                — Tracker database, cookie classifier, pixel domain sets
-  popup.html / popup.js / popup.css    — Extension popup UI
-  details.html / details.js / details.css  — Full-page detailed audit report
+  trackers.js                — Tracker database (~47 domains), heuristic cookie classifier, pixel domain sets
+  popup.html / popup.js / popup.css    — Extension popup UI with warnings
+  details.html / details.js / details.css  — Full-page detailed audit report with tracker domain visualization
   icons/                     — Extension icons
 ```
 
@@ -103,37 +104,60 @@ cookie-lie-detector/
 
 Fingerprinting detection requires overriding browser APIs (`HTMLCanvasElement.toDataURL`, `WebGLRenderingContext.getParameter`, etc.) in the **page's JavaScript context**. Chrome's Manifest V3 supports this via `"world": "MAIN"` in the content script registration, which injects the script directly into the page context and bypasses Content Security Policy restrictions that would block inline script injection.
 
+### Third-Party Cookie Detection
+
+The extension uses the `webRequest` API to monitor which known tracker domains (doubleclick.net, criteo.com, adsrvr.org, etc.) the audited page contacts. After rejection, it captures cookies from those specific tracker domains and includes them in the scoring. This solves the attribution problem — only tracker domains the page actually contacted are checked, preventing false positives from other tabs.
+
+The tracker domain database is curated to avoid false positives:
+- Only domains whose **primary purpose** is tracking/advertising are included
+- Main consumer domains (facebook.com, bing.com, reddit.com, tiktok.com) are excluded — only specific tracking subdomains (connect.facebook.net, bat.bing.com, analytics.tiktok.com) are used
+- Privacy-focused analytics (Plausible, Matomo), APM tools (New Relic), A/B testing (Optimizely), and bot detection services (PerimeterX, DataDome) are explicitly excluded
+- Pixel detection uses a separate, broader domain set since it only checks hidden 1x1 images
+
 ### Scoring Integrity
 
 The scoring engine has several safeguards:
 - **`finalizeAudit` runs exactly once** — guarded by a `finalizing` flag and phase check
 - **Chrome API cookies are awaited** before scoring — ensures HttpOnly cookies are included
+- **Third-party baseline capture is awaited** — fire-and-forget promise from rejection time is resolved before scoring
 - **Baseline chrome cookies are guaranteed** — fallback capture in `finalizeAudit` if the initial capture was missed
 - **Late AUDIT_RESULT messages are rejected** — prevents overwriting finalized data
 - **Report counts match scoring counts** — both use the same classified results object
 - **No double-counting** — persisted cookies and new cookies are mutually exclusive filters
+- **Name+domain baseline matching** — prevents a first-party cookie from masking a same-named third-party cookie on a tracker domain
+
+### Cookie Name Patterns
+
+All name-based tracking patterns use anchored regex to prevent false positives:
+- `_ga` matches exactly `_ga` or `_ga_*`, not `_gateway` or `_gallery`
+- `bcookie` and `lidc` require exact matches, not prefix matches
+- Mixpanel pattern requires the specific `mp_{hex}_mixpanel` format
+- Consent patterns are similarly specific — Cloudflare security cookies (`__cf_bm`, `cf_clearance`) are not misclassified as consent
 
 ### Pixel Detection
 
-Only domains whose primary purpose is beacon/pixel tracking are flagged (Facebook Pixel, Google Ads conversion, Bing UET, LinkedIn Insight, etc.). Ad platforms that serve visible content (Taboola, Outbrain, Criteo, PubMatic) are excluded to prevent false positives. Only pixels that appeared AFTER rejection are scored — pre-existing pixels are filtered by baseline comparison.
+Only domains whose primary purpose is beacon/pixel tracking are flagged (Facebook Pixel, Google Ads conversion, Bing UET, LinkedIn Insight, etc.). Ad platforms that serve visible content (Taboola, Outbrain, Criteo, PubMatic) are excluded from pixel detection to prevent false positives. Only pixels that appeared AFTER rejection are scored — pre-existing pixels are filtered by baseline comparison.
 
 ## Limitations
 
 - **Stale baseline in auto-detection**: The baseline is captured when the banner appears, not at the exact moment of rejection. If tracking scripts load lazily between banner appearance and rejection, they may be flagged as new.
 - **Iframe-based CMPs**: Some consent management platforms render inside cross-origin iframes, which content scripts cannot access. The manual flow still works in these cases.
 - **Cookie walls**: Some sites (The Guardian, Daily Mail, Le Monde, etc.) require a paid subscription to access the "Reject All" option. If rejection redirects to an entirely different domain (e.g., a third-party subscription platform), the extension cannot resume the audit across that domain boundary.
-- **First-party cookies only**: The Chrome cookies API scoped by domain doesn't return third-party cookies. Third-party tracking is caught by the pixel detection signal instead.
+- **Incognito mode**: Third-party cookies are blocked by default in incognito, which causes lower scores. The extension detects this and shows a warning. For accurate auditing, use a regular Chrome window with third-party cookies enabled.
+- **No network payload inspection**: The extension monitors which tracker domains are contacted but does not inspect request/response payloads. Tracking via `fetch()`, `navigator.sendBeacon()`, or server-side cookie syncing is not detected.
 - **Service worker lifecycle**: Chrome may terminate Manifest V3 service workers after ~5 minutes of inactivity, wiping in-memory audit state. Audits complete within ~15 seconds, so this doesn't affect normal usage.
 
 ## Sites to Test
 
 Sites with cookie banners that work well for testing:
+- **reuters.com** — OneTrust CMP, has "Reject All"
 - **bbc.com** — OneTrust CMP, has "Reject All"
-- **stackoverflow.com** — Cookie consent banner (scored 21 in testing)
-- **reuters.com** — OneTrust, shows Reject All (scored 21 in testing)
+- **stackoverflow.com** — OneTrust, cookie consent banner
 - **spiegel.de** — German site, strict GDPR banner
+- **booking.com** — OneTrust, travel site with ad-tech integrations
+- **shopify.com** — E-commerce platform with consent banner
 
-Note: Some major news sites (The Guardian, Daily Mail, Le Monde, CNN) use "cookie walls" that require a subscription to access the reject option, making them difficult to audit with this tool.
+Note: Some major news sites (The Guardian, Daily Mail, Le Monde, CNN) use "cookie walls" that require a subscription to access the reject option, making them difficult to audit with this tool. For accurate results, test in a **regular Chrome window** (not incognito) with third-party cookies enabled.
 
 ## License
 
